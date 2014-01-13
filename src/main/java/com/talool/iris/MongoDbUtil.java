@@ -1,15 +1,20 @@
 package com.talool.iris;
 
 import java.net.UnknownHostException;
+import java.util.Calendar;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.maxmind.geoip.Location;
+import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
 import com.mongodb.MongoClient;
+import com.talool.iris.thrift.CustomerMetadata_t;
+import com.talool.location.MaxMindCityDb;
 
 /**
  * 
@@ -61,7 +66,6 @@ public class MongoDbUtil
 
 		try
 		{
-
 			DBCollection coll = db.getCollection("talool");
 			BasicDBObject query = new BasicDBObject(propertyName, value);
 			dbObject = coll.findOne(query);
@@ -72,6 +76,60 @@ public class MongoDbUtil
 			LOG.error("Problem getting DB object:" + ex.getLocalizedMessage(), ex);
 		}
 		return dbObject;
+
+	}
+
+	public void updateCustomerMetadata(final CustomerMetadata_t customerMetadata)
+	{
+		final DBObject dbObject = get("talool", "customer_id", customerMetadata.getCustomerId());
+
+		if (dbObject == null)
+		{
+			if (LOG.isDebugEnabled())
+			{
+				LOG.debug("Customer not found, inserting ID " + customerMetadata.getCustomerId());
+
+				final BasicDBObject doc = new BasicDBObject("customer_id", customerMetadata.getCustomerId()).
+						append("email", customerMetadata.getEmail());
+				DBCollection coll = db.getCollection("talool");
+
+				final Location location = MaxMindCityDb.get().getLocation(customerMetadata.getIpAddress());
+
+				final BasicDBList list = new BasicDBList();
+				final BasicDBObject deviceObject = new BasicDBObject("user_agent", "fill_in_user_agent");
+				deviceObject.append("last_update", Calendar.getInstance().getTime());
+
+				final BasicDBObject locationObject = new BasicDBObject().append("location_service_on", false);
+				if (location != null)
+				{
+					locationObject.append("ip", customerMetadata.getIpAddress());
+					locationObject.append("city", location.city);
+					locationObject.append("state", location.region);
+					locationObject.append("zip", location.postalCode);
+					locationObject.append("country_code", location.countryCode);
+					locationObject.append("area_code", location.area_code);
+					locationObject.append("ip_lat", location.latitude);
+					locationObject.append("ip_lng", location.longitude);
+				}
+
+				deviceObject.append("location", locationObject);
+
+				list.add(deviceObject);
+
+				doc.append("devices", list);
+
+				coll.insert(doc);
+
+			}
+			// "location_service_on": false,
+			// "city": "Boulder",
+			// "state": "CO",
+			// "zip": "80202",
+			// "lat": 77889172.12,
+			// "lng": 798100138.34,
+			// "ip": "192.71.12.12"
+
+		}
 
 	}
 
